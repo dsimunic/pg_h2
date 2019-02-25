@@ -9,7 +9,7 @@
     ranch
    ]},
   {env,[]},
-  {modules, [prx_app, prx_sup, prx_echo]},
+  {modules, [prx_app, prx_sup,pg_handler]},
   {maintainers, []},
   {licenses, ["Apache 2.0"]},
   {links, []}
