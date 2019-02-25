@@ -1,0 +1,243 @@
+= http2 Wire Protocol
+
+This proof-of-concept project explores the feasibility of using http2 framing as the next Postgres wire protocol.
+
+NOTE: Dear reader, if you find this idea exciting, your help is very much needed to help make it happen!
+
+== Why http2?
+
+Http2 offers a number of benefits over existing Postgres wire format: content and feature negotiation, simultaneous bidirectional streams, separate frames for headers/trailers and data frames, application level flow control, header compression. The protocol is future proof: once built-in, it will be easy to evolve without breaking the backward compatibility. Its performance, latency, security are actively tested and researched by the large Internet community. Http interaction model allows to connect, authenticate, authorize, and issue the query in one request, significantly reducing latency.
+
+
+In addition to all the above, having Postgres speak http2 supports a number of modern use cases related to the web and internet.
+
+A new wire protocol implementation presents an opportunity to break the dreaded backward compatibility compromises. The new protocol can address a number of security and usability issues that might be hard to resolve in v3 transparently. An example: thanks to multiple streams, one can imagine serving strictly one query per request, with parameters separate from the rest of the query, thus limiting the possibility of injection attacks. Since this is completely new wire format, new clients will have to be built (though there are already a couple of billion that speak http2) and those can immediately work in the new way, without historical baggage.
+
+NOTE: This proposal advocates implementation of the new protocol with zero impact on existing clients. http2 can co-exist with v3 protocol forever: there is no need to ever remove support for existing clients.
+
+== PoC Objectives
+
+* Implement minimal amount of code needed to interact with an existing http2 client, (such as curl, nghttp, or h2i) and be able to serve the results of a single query.
+
+* Explore a non-invasive implementation that has no impact on existing clients.
+
+* Start a conversation about merits of implementing http2 as the new wire protocol.
+
+* Use as a testbed to measure any possible reductions in latency of replies.
+
+== Status
+
+The implementation successfully:
+
+* negotiates the TLS connection with ALPN,
+* accepts an http2 request,
+* responds with default SETTINGS frame,
+* parses the headers for database and user,
+* runs the backend,
+* and executes the query.
+
+All the while functionality for v3 clients is not impacted in any way.
+
+The response part is still todo:
+
+* Set up nghttp2 to create new streams for response.
+* Create functions to translate all existing packet types into either headers or data frames.
+* Respond to errors and close connection.
+
+== Implementation
+
+CAUTION: This is a very pragmatic 'learn to do C in order to see if an idea works' kind of code. The code is lacking proper error handling, crashes here and there. An expert in C and Postgres will have probably written it differently. Our goal is to accept a request and return query results to convince ourselves that this is possible and learn along the way how complex would it be to advocate for a production-grade implementation.
+
+NOTE: Dear reader, hopefully you are an expert recognizing the excitement of this idea, and hopefully it inspires you to contribute to its realization.
+
+To handle http2, we are using `libnghttp2`, which is very similar in principle to how libpq works on the server side. The library only handles the protocol details and lets the app do the communication and memory management. Very good fit for how Postgres works.
+
+We are only exploring communication over TLS. TLS brings two nice properties: ALPN, allowing us to negotiate the protocol with clients (now h2, maybe one day quic or some other framing); reducing latency with 1-rtt and 0-rtt session resumption with tls 1.3.
+
+=== Detecting the protocol
+
+Our goal is an implementation that is completely invisible to existing v2 and v3 clients. The code should accommodate h2 clients without absolutely zero impact on existing infrastructure.
+
+The very first byte in the very first frame in a TLS connection is type 0x16, followed by TLS version: 0x16 0x03 0x03. This number is larger than allowed startup packet length, and thus all we need to do is peek at the incoming stream just before `pg_init()`:
+
+    backend/postmaster.c:
+
+    static bool
+    is_tls_session_request(Port *port)
+    {
+        ...
+        n = recv(port->sock, buf, sizeof(buf), MSG_PEEK);
+        /*
+        * Enough to check if the first byte is TLS frame protocol id
+        * since valid packet lengths cannot start with 0x16.
+        */
+        if (n > 0 && buf[0]== 0x16)
+            return true;
+      }
+
+    ...
+
+    /* then just before pq_init */
+
+      if (is_tls_session_request(port) == true
+          && secure_open_server(port) == 0
+          && initialize_nghttp2_session(port) == 0)
+          {
+              status = STATUS_OK;
+              port->h2_backend = true;
+          }
+
+
+Even if we operated without TLS, http2 opens with a 24-byte magic, the first three bytes of which are characters `'P'` `'R'` `'I'`, again larger than the allowed startup packet length.
+
+Once we detect TLS we call into the existing `secure_open_server` to set up the TLS connection. We need to handle ALPN callback to negotiate `h2` with generic clients that offer more protocols. Luckily, OpenSSL provides all we need, and it amounts to adding a few lines of code.  If a client does not propose ALPN extension, the callback has no effect. Thus the whole protocol negotiation is invisible to existing clients.
+
+Once this is done, we signal the `h2` mode through new flag on the Port structure: `port->h2_backend`. Testing the flag, we can now extract the startup data from http2 headers, or, if we didn't detect TLS/h2, just fall back to `ProcessStartupPacket` like nothing happened.
+
+A single request from client contains everything needed to respond with the result: the database we want, username, authentication, actual query. In pre-`BackendRun` mode we need to pick up the database and user from the headers.
+
+libnghttp2 provides everything needed to parse headers and handle proper h2 framing. The headers_callback gets called for each header, where can collect them all and put into a structure on port.
+
+    if (frame->hd.type == NGHTTP2_HEADERS
+        && frame->headers.cat == NGHTTP2_HCAT_REQUEST)
+    {
+        if (strncmp((char *)name, ":path:", namelen) == 0)
+        {
+        ...
+        port->h2_conn->request_path = pstrdup(percent_decode(clean_path, j));
+        }
+
+        if (strncmp((char *)name, "pg-database", namelen) == 0)
+        port->database_name = pstrdup((const char *)value);
+
+        if (strcmp((char *)name, "pg-user") == 0)
+        port->user_name = pstrdup((const char *)value);
+    }
+
+
+NOTE: Technically, what we want is to do what a web server does: convert the request into a `request` structure that we can later use to service the request. But this is still a TODO. Requires someone with more C coding experience.
+
+nghttp2 works exactly like libpq: it manages its internal memory buffer and deals with protocol semantics. The application is responsible for pushing bytes into it, and to send the bytes back to the client. For that, we tap into secure_read and secure_write, which require no changes at all.
+
+To send back the response, we just need to tap into `pq_putmessage` and redirect to `h2_putmessage` if the backend is in `h2` mode:
+
+    libpq/pqcom.c:
+
+    static int
+    socket_putmessage(char msgtype, const char *s, size_t len)
+    {
+        /* In production code, we'd never reach this point.
+         * Rather, we'd insert h2_putmessage already in PQcommMethods.
+         * Just need to figure out how it's done.
+         */
+        if (MyProcPort->h2_backend)
+          return h2_putmessage(msgtype, s, len);
+
+    ...
+
+NOTE: The best would be to have `PQcommMethods` wired to talk http2 where necessary. Can't figure out where to wire it.
+
+    libpq/be-h2.c:
+
+    static int
+    h2_putmessage(char msgtype, const char *s, size_t len)
+    {
+      switch (msgtype)
+      {
+          case ’S’:   /* create new response header */
+          ...
+          case ‘d’:   /* insert this into DATA frame */
+          ...
+          case 'E':   /* Error. Let's send a 500 */
+          ...
+      ...
+      }
+      PqCommBusy = false;
+      return 0;
+    }
+
+NOTE: This part is still TODO. The next step is to implement callbacks in nghttp2 to build proper request streams and then parse the `*s` and map every packet into its proper http2 frame. This is the most unobtrusive next step: just interpret every reply as is but return as http2 frames. A more sophisticated implementation would abstract away code that relies on the knowledge of v3 protocol packets. That's more invasive, however.
+
+=== TODO
+
+* Extract query text from the request.
++
+At present, we're simulating the 'path is the function' semantics: we pick up the path from the request and assume this is the name of the function we want to execute.
++
+What we need is to really build a `request` object and correctly extract the full payload and parameters from the request. For example, maybe we want to implement a QUERY method, similar to POST or PUT, and pass the query text as the body of the request, with parameters in the query string or in the headers.
+
+* Pass the query to the query execution
++
+At present, we simulate the text by faking the 'Q' packet and building the query string manually. This doesn't seem to work too well, still debugging. This might require a lot of rework.
+
+* Build http2 streams and respond
++
+Still learning how to build new streams in nghttp2 and then pass the response back to the client.
+
+=== Challenges
+
+* The main loop needs to accommodate handling multiple streams: a http2 client is able to send multiple queries in multiple streams. And we need to respond properly to each. There's also the issue or stream priorities and dependencies that need to be understood how it relates to Postgres.
+
+* Authentication dance is deeply buried into the initialization. Probably the best way would be to introduce new auth mode keyword into `pg_hba.conf`, say `http2` in addition to `trust`, `md5`, etc. Handling this keyword would bypass the v3 auth dance.
++
+The http2 way to deal with authorization is through the `authorization` header, or through 403 redirects.
+
+== http2 Semantics
+
+The flexibility of http2 brings a number of interesting challenges to mind, and if not properly handled might lead to unnecessary complexity.
+
+One of our non-goals of this effort is to fix how Postgres interacts with web clients (curl, browsers). We want to stick to implementing http2 framing, and leave the protocol semantics to users.
+
+The vision is that Postgres would handle framing, parsing the requests, and formatting responses. The rest should be configurable for users--either through catalog tables, plugins, or pl-functions.
+
+=== Initialization
+
+One area where we are forced to take a stance is during backend initialization, when we have to figure out the database and the user. There are a few ways to do that from http, and the best would be to make this configurable. There are several ways how to determine the database:
+
+* Using a custom header (say, `pg-database`)
++
+This is the closest to emulating the v3 startup packet: all necessary data is in the headers.
+
+In case the `pg-database` header is not present, we might allow fallback behavior and decide on the database from request:
+
+* From `:authority:` header
++
+In other words, each host name is directed to a database. For example a request to `site1.example.com` would try to load the eponymous database.
++
+Alternatively, we can have `h2_default` database. This is interesting for enabling the scenario where we host PgAdmin directly in the database. One would just point the browser to the address of the Postgres cluster, log in, and get served all PgAdmin javascript.
+
+* From ':path:` header
++
+We can parse the request path and pick up the first component as the database name. More or less hour libpq parses the `postgres://` urls.
+
+* Configuring a database in `postgresql.conf`
++
+In case we want only one database to respond to http2 requests, we can configure it manually and leave it at that. Thought not sure what's the purpose of that.
+
+* Custom plugin
++
+We can load a specific plugin accessible during the backend initialization and let it implement some custom way of determining the database.
+
+Similar considerations apply to determining the username during initialization.
+
+=== Handling Requests
+
+Http2 gives us the possibility to use a variety of request methods--either built-in or user-defined.
+
+We can emulate the semantics of the existing v3 'Q' packet, for example, by using a `QUERY` (or `Q`) request method. In fact, we can continue using the methods with the same names as the existing single character packets to preserve v3 behavior. Though not sure what would be the advantage of that.
+
+But no longer need to fix how requests are handled. It is better to let the application designer decide.
+
+Similar to how web servers handle requests, we can introduce request handlers. For example, one could assign a specific function to handle 'GET' requests, or another one to deal with 'QUERY' requests. The most flexible option would be to assign functions as handlers through the system catalog.
+
+Maybe there would be some predefined handlers built-in: QUERY handler would obviously execute the query by reading the message payload and return results.
+
+Another level is path handling: one imagines being able to associate specific paths to specific functions, just like how web servers work. Again, configuring this through system catalog absolves from fixing anything in the core. If no handler is registered, Postgres reports an error, in the same manner it reports an error if a function is not known, or cannot be determined.
+
+Finally, content negotiation is very interesting.
+
+Clients can submit queries with content with different media types. For example, we could POST a query of type `postgres/sql-query`, where the body is the usual query, or we could post `form/www-url-encoded`, and choose to handle the content as a parameter to a function.
+
+But clients could also ask for specific content type: if we have two functions that return the same data, but one is a recordset-returning, while the other returns `JSON`, a client could ask for `application/json` and have Postgres select the correct function to return the result.
+
+One can imagine in the future that Postgres can also return data in multiple formats: for example, returning data in CSV, Protobuf, Thrift, or another, yet unknown method of packaging the result set. A whole new class of plugins and extension points becomes possible with native content negotiation and clients that understand it.
