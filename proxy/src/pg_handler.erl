@@ -1,12 +1,11 @@
 -module(pg_handler).
 -behavior(cowboy_handler).
 
--export([init/2]).
-
-
+-export([init/2, info/3]).
 
 
 init(Req0=#{method := <<"QUERY">>,version := 'HTTP/2'} , State) ->
+    process_flag(trap_exit, true),
     Db =     cowboy_req:header(<<"database">>, Req0, <<>>),
     DbUser = cowboy_req:header(<<"user">>, Req0, <<>>),
     DbPass = cowboy_req:header(<<"password">>, Req0, <<>>),
@@ -47,6 +46,14 @@ init(Req0=#{method := <<"QUERY">>,version := 'HTTP/2'} , State) ->
 
 init(Req0,State) ->
     {ok, invalid_request(Req0), State }.
+
+
+info({'EXIT', Pid, Reason}, Req, State) ->
+    io:fwrite("Pid ~p Closed. Reason ~p", [Pid, Reason]),
+    {ok, invalid_request(Req), State};
+
+info(_Msg, Req, State) ->
+    {ok, Req, State, hibernate}.
 
 
 validate_db_headers(D, U, P, H) ->
