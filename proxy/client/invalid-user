@@ -1,0 +1,10 @@
+#! /bin/bash
+
+curl -v --http2-prior-knowledge \
+  -XQUERY \
+  -H"database: postgres" \
+  -H"dbhost: paris-scw-01.influent.cc" \
+  -H"dbport: 65432" \
+  -H"user: user1(md5)" \
+  -H"password: YmMyNjUwMzA1YzE3" \
+  "http://localhost:8080/"
