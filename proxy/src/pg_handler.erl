@@ -29,7 +29,7 @@ init(Req0=#{method := <<"QUERY">>,version := 'HTTP/2'} , State) ->
                     Rep = case epgsql_sock:sync_command(C, epgsql_cmd_squery_raw, Body) of
                         % We are only processing the first resultset and dropping the rest on the floor
                         [R|_] -> handle_squery_response(R, Req0);
-                        R -> handle_squery_response(R, Req0)
+                        R     -> handle_squery_response(R, Req0)
                     end,
                     ok = epgsql:close(C),
 
@@ -67,24 +67,30 @@ handle_squery_response({error, Err }, R) -> invalid_request(R, io_lib:format("~p
 
 send_rowset(R, RawColumns, Rows) ->
     cowboy_req:reply(200,
-        #{<<"content-type">> => <<"postgres/rowset">>},
+        #{<<"content-type">> => <<"postgres/rowset">>
+         , <<"access-control-allow-methods">> => <<"GET, OPTIONS, QUERY">>
+         , <<"access-control-allow-origin">> => <<"*">>
+        },
         lists:flatten([RawColumns, lists:map(fun({A}) -> A end, Rows)]),
         R).
 
 no_content(R) ->
     cowboy_req:reply(204,
-        #{ <<"content-type">> => <<"text/plain">> },
+        #{ <<"content-type">> => <<"text/plain">>
+         , <<"access-control-allow-methods">> => <<"GET, OPTIONS, QUERY">>
+         , <<"access-control-allow-origin">> => <<"*">>
+        },
         <<"No content.">>,
         R).
 
 invalid_request(R) ->
-    cowboy_req:reply(400,
-        #{ <<"content-type">> => <<"text/plain">> },
-        <<"Invalid request.">>,
-        R).
+    invalid_request(R, <<"Invalid request.">>).
 
 invalid_request(R, Msg) ->
     cowboy_req:reply(400,
-        #{ <<"content-type">> => <<"text/plain">> },
+        #{ <<"content-type">> => <<"text/plain">>
+         , <<"access-control-allow-methods">> => <<"GET, OPTIONS, QUERY">>
+         , <<"access-control-allow-origin">> => <<"*">>
+        },
         Msg,
         R).
