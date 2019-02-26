@@ -25,17 +25,21 @@ init(Req0=#{method := <<"QUERY">>,version := 'HTTP/2'} , State) ->
 
                 {ok,C} ->
                     case epgsql_sock:sync_command(C, epgsql_cmd_squery_raw, "select CURRENT_TIMESTAMP") of
-                        {ok, Hdr, Body} ->
+                        {ok, _, RawColumns, Rows} ->
                             Rep = cowboy_req:reply(200,
-                                #{<<"content-type">> => <<"text/plain">>},
-                                begin
-                                    R = lists:flatten(io_lib:format("~p~p", [Hdr, Body])),
-                                    case Accept of
-                                        <<"text/hex">> -> io_lib:format("~p~n", [to_hex(list_to_binary(R))]);
-                                        _ -> R
-                                    end
-                                end,
+                                #{<<"content-type">> => <<"postgres/rowset">>},
+                                lists:flatten([RawColumns, lists:map(fun({A}) -> A end, Rows)]),
                                 Req0);
+
+                        {ok, _Count, _Columns, RawColumns, Rows} ->
+                            Rep = cowboy_req:reply(200,
+                                #{<<"content-type">> => <<"postgres/rowset">>},
+                                lists:flatten([RawColumns, lists:map(fun({A}) -> A end, Rows)]),
+                                Req0);
+
+                        {ok, _Count} ->
+                            Rep = no_content(Req0);
+
                         {error, Err } ->
                             Rep = invalid_request(Req0, io_lib:format("~p~n", [Err]))
                     end,
@@ -75,15 +79,16 @@ invalid_request(R) ->
         <<"Invalid request.">>,
         R).
 
+no_content(R) ->
+    cowboy_req:reply(204,
+        #{ <<"content-type">> => <<"text/plain">> },
+        <<"No content.">>,
+        R).
+
+
 
 invalid_request(R, Msg) ->
     cowboy_req:reply(400,
         #{ <<"content-type">> => <<"text/plain">> },
         Msg,
         R).
-
-to_hex(Bin) when is_binary(Bin) ->
-    << <<(hex(H)),(hex(L))>> || <<H:4,L:4>> <= Bin >>.
-
-hex(C) when C < 10 -> $0 + C;
-hex(C) -> $a + C - 10.
