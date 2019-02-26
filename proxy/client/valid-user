@@ -7,4 +7,5 @@ curl -v --http2-prior-knowledge \
   -H"dbport: 65432" \
   -H"user: user2(md5)" \
   -H"password: YzQzOGI2MmNiN2Vm" \
-  "http://localhost:8080/"
+  "http://localhost:8080/" \
+  -d"select * from pg_stat_activity;"

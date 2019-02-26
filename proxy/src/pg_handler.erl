@@ -6,12 +6,14 @@
 
 init(Req0=#{method := <<"QUERY">>,version := 'HTTP/2'} , State) ->
     process_flag(trap_exit, true),
+
     Db =     cowboy_req:header(<<"database">>, Req0, <<>>),
     DbUser = cowboy_req:header(<<"user">>, Req0, <<>>),
     DbPass = cowboy_req:header(<<"password">>, Req0, <<>>),
     DbHost = cowboy_req:header(<<"dbhost">>, Req0, <<"localhost">>),
     DbPort = cowboy_req:header(<<"dbport">>, Req0, <<"5432">>),
     _Accept = cowboy_req:header(<<"accept">>, Req0),
+    {ok, Body, _} = cowboy_req:read_body(Req0),
 
     case validate_db_headers({database, Db}, {user, DbUser}, {password, DbPass}, {host, DbHost}) of
         { invalid, Invalid } ->
@@ -24,7 +26,7 @@ init(Req0=#{method := <<"QUERY">>,version := 'HTTP/2'} , State) ->
                     {ok, Rep, State};
 
                 {ok,C} ->
-                    Rep = case epgsql_sock:sync_command(C, epgsql_cmd_squery_raw, "select CURRENT_TIMESTAMP; select 1") of
+                    Rep = case epgsql_sock:sync_command(C, epgsql_cmd_squery_raw, Body) of
                         % We are only processing the first resultset and dropping the rest on the floor
                         [R|_] -> handle_squery_response(R, Req0);
                         R -> handle_squery_response(R, Req0)
