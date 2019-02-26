@@ -11,7 +11,7 @@ init(Req0=#{method := <<"QUERY">>,version := 'HTTP/2'} , State) ->
     DbPass = cowboy_req:header(<<"password">>, Req0, <<>>),
     DbHost = cowboy_req:header(<<"dbhost">>, Req0, <<"localhost">>),
     DbPort = cowboy_req:header(<<"dbport">>, Req0, <<"5432">>),
-    Accept = cowboy_req:header(<<"accept">>, Req0),
+    _Accept = cowboy_req:header(<<"accept">>, Req0),
 
     case validate_db_headers({database, Db}, {user, DbUser}, {password, DbPass}, {host, DbHost}) of
         { invalid, Invalid } ->
@@ -24,24 +24,10 @@ init(Req0=#{method := <<"QUERY">>,version := 'HTTP/2'} , State) ->
                     {ok, Rep, State};
 
                 {ok,C} ->
-                    case epgsql_sock:sync_command(C, epgsql_cmd_squery_raw, "select CURRENT_TIMESTAMP") of
-                        {ok, _, RawColumns, Rows} ->
-                            Rep = cowboy_req:reply(200,
-                                #{<<"content-type">> => <<"postgres/rowset">>},
-                                lists:flatten([RawColumns, lists:map(fun({A}) -> A end, Rows)]),
-                                Req0);
-
-                        {ok, _Count, _Columns, RawColumns, Rows} ->
-                            Rep = cowboy_req:reply(200,
-                                #{<<"content-type">> => <<"postgres/rowset">>},
-                                lists:flatten([RawColumns, lists:map(fun({A}) -> A end, Rows)]),
-                                Req0);
-
-                        {ok, _Count} ->
-                            Rep = no_content(Req0);
-
-                        {error, Err } ->
-                            Rep = invalid_request(Req0, io_lib:format("~p~n", [Err]))
+                    Rep = case epgsql_sock:sync_command(C, epgsql_cmd_squery_raw, "select CURRENT_TIMESTAMP; select 1") of
+                        % We are only processing the first resultset and dropping the rest on the floor
+                        [R|_] -> handle_squery_response(R, Req0);
+                        R -> handle_squery_response(R, Req0)
                     end,
                     ok = epgsql:close(C),
 
@@ -72,11 +58,15 @@ validate_db_headers(D, U, P, H) ->
         _ -> ok
     end.
 
+handle_squery_response({ok, _, RawColumns, Rows}, R) -> send_rowset(R, RawColumns, Rows);
+handle_squery_response({ok, _Count, _Columns, RawColumns, Rows}, R) -> send_rowset(R, RawColumns, Rows);
+handle_squery_response({ok, _Count}, R) -> no_content(R);
+handle_squery_response({error, Err }, R) -> invalid_request(R, io_lib:format("~p~n", [Err])).
 
-invalid_request(R) ->
-    cowboy_req:reply(400,
-        #{ <<"content-type">> => <<"text/plain">> },
-        <<"Invalid request.">>,
+send_rowset(R, RawColumns, Rows) ->
+    cowboy_req:reply(200,
+        #{<<"content-type">> => <<"postgres/rowset">>},
+        lists:flatten([RawColumns, lists:map(fun({A}) -> A end, Rows)]),
         R).
 
 no_content(R) ->
@@ -85,7 +75,11 @@ no_content(R) ->
         <<"No content.">>,
         R).
 
-
+invalid_request(R) ->
+    cowboy_req:reply(400,
+        #{ <<"content-type">> => <<"text/plain">> },
+        <<"Invalid request.">>,
+        R).
 
 invalid_request(R, Msg) ->
     cowboy_req:reply(400,
