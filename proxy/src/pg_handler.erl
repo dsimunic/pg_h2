@@ -3,6 +3,8 @@
 
 -export([init/2, info/3]).
 
+init(Req0=#{method := <<"OPTIONS">>}, State) ->
+    { ok, no_content(Req0), State};
 
 init(Req0=#{method := <<"QUERY">>,version := 'HTTP/2'} , State) ->
     process_flag(trap_exit, true),
@@ -67,19 +69,13 @@ handle_squery_response({error, Err }, R) -> invalid_request(R, io_lib:format("~p
 
 send_rowset(R, RawColumns, Rows) ->
     cowboy_req:reply(200,
-        #{<<"content-type">> => <<"postgres/rowset">>
-         , <<"access-control-allow-methods">> => <<"GET, OPTIONS, QUERY">>
-         , <<"access-control-allow-origin">> => <<"*">>
-        },
+        maps:merge(#{<<"content-type">> => <<"postgres/rowset">> }, cors_headers()),
         lists:flatten([RawColumns, lists:map(fun({A}) -> A end, Rows)]),
         R).
 
 no_content(R) ->
     cowboy_req:reply(204,
-        #{ <<"content-type">> => <<"text/plain">>
-         , <<"access-control-allow-methods">> => <<"GET, OPTIONS, QUERY">>
-         , <<"access-control-allow-origin">> => <<"*">>
-        },
+        maps:merge(#{ <<"content-type">> => <<"text/plain">> }, cors_headers()),
         <<"No content.">>,
         R).
 
@@ -88,9 +84,14 @@ invalid_request(R) ->
 
 invalid_request(R, Msg) ->
     cowboy_req:reply(400,
+        maps:merge(#{ <<"content-type">> => <<"text/plain">> }, cors_headers()),
+        Msg,
+        R).
+
+
+cors_headers() ->
         #{ <<"content-type">> => <<"text/plain">>
          , <<"access-control-allow-methods">> => <<"GET, OPTIONS, QUERY">>
          , <<"access-control-allow-origin">> => <<"*">>
-        },
-        Msg,
-        R).
+        , <<"access-control-allow-headers">> => <<"content-type,database,dbhost,dbport,password,user">>
+        }.

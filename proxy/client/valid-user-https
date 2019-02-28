@@ -1,0 +1,11 @@
+#! /bin/bash
+
+curl -v --http2-prior-knowledge \
+  -XQUERY \
+  -H"database: postgres" \
+  -H"dbhost: paris-scw-01.influent.cc" \
+  -H"dbport: 65432" \
+  -H"user: user2(md5)" \
+  -H"password: YzQzOGI2MmNiN2Vm" \
+  "https://localhost:8443/" \
+  -d"select * from pg_stat_activity;"
