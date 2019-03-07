@@ -16,7 +16,7 @@ start(_StartType, _StartArgs) ->
     {ok, SupPid} = pg_http_sup:start_link(),
     [{ok, _} = pg_http_sup:start_child(Name, PoolConfig) || {Name, PoolConfig} <- Pools],
 
-    Dispatch = cowboy_router:compile([ {'_', [{"/", pg_handler, []}]} ]),
+    Dispatch = cowboy_router:compile([ {'_', [{"/", pg_http_cowboy_handler, []}]} ]),
     {ok, _} = cowboy:start_clear(my_http_listener, [{port, 8080}], #{env => #{dispatch => Dispatch}}),
     {ok, _} = cowboy:start_tls(https, [ {port, 8443},
                                         {cacertfile, os:getenv("CA_CERT_PATH") },
