@@ -1,16 +1,16 @@
 %%%-------------------------------------------------------------------
-%% @doc prx public API
+%% @doc pg_http public API
 %% @end
 %%%-------------------------------------------------------------------
 
--module(prx_app).
+-module(pg_http_app).
 -behavior(application).
 
 %% Application callback
 -export([start/2, stop/1]).
 
 start(_StartType, _StartArgs) ->
-    {ok, SupPid} = prx_sup:start_link(),
+    {ok, SupPid} = pg_http_sup:start_link(),
     Dispatch = cowboy_router:compile([ {'_', [{"/", pg_handler, []}]} ]),
     {ok, _} = cowboy:start_clear(my_http_listener, [{port, 8080}], #{env => #{dispatch => Dispatch}}),
     {ok, _} = cowboy:start_tls(https, [

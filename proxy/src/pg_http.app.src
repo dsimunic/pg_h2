@@ -1,0 +1,19 @@
+{application, pg_http,
+ [{description, "Postgres HTTP proxy"},
+  {vsn, "1.0.0"},
+  {registered, []},
+  {mod, { pg_http_app, []}},
+  {applications,
+   [kernel,
+    stdlib,
+    ranch,
+    backoff,
+    telemetry
+   ]},
+  {env,[]},
+  {modules, []},
+
+  {maintainers, ["Damir Simunic"]},
+  {licenses, ["Apache 2.0"]},
+  {links, [{"Github", "https://github.com/dsimunic/pg_http"}]}
+ ]}.

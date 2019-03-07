@@ -1,4 +1,4 @@
--module(prx_sup).
+-module(pg_http_sup).
 -behavior(supervisor).
 
 -export([start_link/0]).

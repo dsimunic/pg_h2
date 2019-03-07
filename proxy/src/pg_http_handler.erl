@@ -1,4 +1,4 @@
--module(pg_handler).
+-module(pg_http_handler).
 -behavior(cowboy_handler).
 
 -export([init/2, info/3]).
