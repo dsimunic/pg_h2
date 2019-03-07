@@ -20,8 +20,7 @@ whereis_child(Sup, Id) ->
 init([QueueTid, PoolPid, PoolName, PoolConfig]) ->
     Size = maps:get(pool_size, PoolConfig, 1),
     Children = [#{id => connection_sup,
-                  start => {pg_http_connection_sup, start_link, [QueueTid, PoolPid, PoolName,
-                                                             PoolConfig]},
+                  start => {pg_http_connection_sup, start_link, [QueueTid, PoolPid, PoolName, PoolConfig]},
                   type => supervisor,
                   shutdown => 5000},
                 #{id => connection_starter,
