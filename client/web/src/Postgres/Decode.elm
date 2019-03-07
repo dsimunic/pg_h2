@@ -167,9 +167,9 @@ read decoder prev =
     andThen (\p -> map p decoder) prev
 
 
-skip : Decoder a -> Decoder b -> Decoder b
-skip decoder prev =
-    andThen (\p -> map (always p) decoder) prev
+skip : Decoder ignore -> Decoder keep -> Decoder keep
+skip decoderIgnore decoderKeep =
+    andThen (\p -> map (always p) decoderIgnore) decoderKeep
 
 
 list : Int -> Decoder a -> Decoder (List a)

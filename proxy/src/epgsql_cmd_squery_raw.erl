@@ -43,8 +43,7 @@ handle_message(?ROW_DESCRIPTION, <<Count:?int16, Bin/binary>> = RawCols, Sock, S
     {noaction, Sock, State#squery{columns = Columns,
                                   raw_columns = [?ROW_DESCRIPTION| binary_to_list(RawCols)],
                                   decoder = Decoder}};
-handle_message(?DATA_ROW, <<_Count:?int16, _Bin/binary>> = RawRow,
-               Sock, St) ->
+handle_message(?DATA_ROW, <<_Count:?int16, _Bin/binary>> = RawRow, Sock, St) ->
     Row = {[?DATA_ROW | binary_to_list(RawRow)]},
     {add_row, Row, Sock, St};
 handle_message(?COMMAND_COMPLETE, Bin, Sock, #squery{columns = Cols, raw_columns = RawCols} = St) ->
