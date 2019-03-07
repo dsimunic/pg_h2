@@ -11,6 +11,9 @@
                 "kind": "build",
                 "isDefault": true
             },
+            "options": {
+                "cwd": "${workspaceRoot}/proxy"
+            },
             "problemMatcher": "$erlang"
         }
     ]

@@ -5,8 +5,9 @@
             "name": "Launch erlang",
             "type": "erlang",
             "request": "launch",
-            "cwd": "${workspaceRoot}",
-            "preLaunchTask": "rebar3 compile"
+            "cwd": "${workspaceRoot}/proxy",
+            "preLaunchTask": "rebar3 compile",
+            "arguments": "-eval 'application:start(pg_http)'"
         }
     ]
 }
