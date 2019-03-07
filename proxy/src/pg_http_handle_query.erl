@@ -8,8 +8,8 @@
 %% > Query when len(strip(Query)) == 0
 %% < EmptyQueryResponse
 %% < ReadyForQuery
--module(epgsql_cmd_squery_raw).
--behaviour(epgsql_command).
+-module(pg_http_handle_query).
+%%-behavior(pg_http_verb).
 -export([init/1, execute/2, handle_message/4]).
 -export_type([response/0]).
 

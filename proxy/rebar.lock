@@ -1,18 +1,18 @@
 {"1.1.0",
-[{<<"cowboy">>,{pkg,<<"cowboy">>,<<"2.6.1">>},0},
+[{<<"backoff">>,{pkg,<<"backoff">>,<<"1.1.6">>},0},
+ {<<"cowboy">>,{pkg,<<"cowboy">>,<<"2.6.1">>},0},
  {<<"cowlib">>,{pkg,<<"cowlib">>,<<"2.7.0">>},1},
- {<<"epgsql">>,
-  {git,"https://github.com/epgsql/epgsql",
-       {ref,"20ece6fbcb6a84aaf04d8df108f96f264e675e7d"}},
-  0},
  {<<"ranch">>,{pkg,<<"ranch">>,<<"1.7.1">>},0},
  {<<"sync">>,
   {git,"git://github.com/rustyio/sync",
        {ref,"d7ded2d221fb542b3417cffe77163206613daacb"}},
-  0}]}.
+  0},
+ {<<"telemetry">>,{pkg,<<"telemetry">>,<<"0.3.0">>},0}]}.
 [
 {pkg_hash,[
+ {<<"backoff">>, <<"83B72ED2108BA1EE8F7D1C22E0B4A00CFE3593A67DBC792799E8CCE9F42F796B">>},
  {<<"cowboy">>, <<"F2E06F757C337B3B311F9437E6E072B678FCD71545A7B2865BDAA154D078593F">>},
  {<<"cowlib">>, <<"3EF16E77562F9855A2605900CEDB15C1462D76FB1BE6A32FC3AE91973EE543D2">>},
- {<<"ranch">>, <<"6B1FAB51B49196860B733A49C07604465A47BDB78AA10C1C16A3D199F7F8C881">>}]}
+ {<<"ranch">>, <<"6B1FAB51B49196860B733A49C07604465A47BDB78AA10C1C16A3D199F7F8C881">>},
+ {<<"telemetry">>, <<"099A7F3CE31E4780F971B4630A3C22EC66D22208BC090FE33A2A3A6A67754A73">>}]}
 ].
