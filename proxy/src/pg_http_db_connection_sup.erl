@@ -1,4 +1,4 @@
--module(pg_http_connection_sup).
+-module(pg_http_db_connection_sup).
 
 -behaviour(supervisor).
 
@@ -19,8 +19,8 @@ init([QueueTid, SupPid, PoolPid, PoolName, PoolConfig]) ->
     SupFlags = #{strategy => simple_one_for_one,
                  intensity => 5,
                  period => 10},
-    ChildSpecs = [#{id => pg_http_connection,
-                    start => {pg_http_connection, start_link, [QueueTid, PoolPid, PoolName,
+    ChildSpecs = [#{id => pg_http_db_connection,
+                    start => {pg_http_db_connection, start_link, [QueueTid, PoolPid, PoolName,
                                                            SupPid, PoolConfig]},
                     shutdown => 100}],
     {ok, {SupFlags, ChildSpecs}}.

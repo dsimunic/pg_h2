@@ -11,7 +11,7 @@
     telemetry
    ]},
   {env,[]},
-  {modules, []},
+  {modules, [pg_http, pg_http_db_pool, pg_http_db_handler, pg_http_cowboy_handler]},
 
   {maintainers, ["Damir Simunic"]},
   {licenses, ["Apache 2.0"]},

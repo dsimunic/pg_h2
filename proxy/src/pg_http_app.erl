@@ -10,7 +10,7 @@
 -export([start/2, stop/1]).
 
 start(_StartType, _StartArgs) ->
-    pg_http_query_cache:start_link(),
+    pg_http_db_query_cache:start_link(),
     Pools = application:get_env(pg_http, pools, []),
 
     {ok, SupPid} = pg_http_sup:start_link(),

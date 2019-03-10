@@ -42,8 +42,8 @@ To try `pgo` simply modify `config/example.config` by replacing the `host`, `dat
 Or start a pool as a child of your application's supervisor:
 
 ``` erlang
-ChildSpec = #{id => pg_http_pool,
-              start => {pg_http_pool, start_link, [Name, PoolConfig]},
+ChildSpec = #{id => pg_http_db_pool,
+              start => {pg_http_db_pool, start_link, [Name, PoolConfig]},
               shutdown => 1000},
 ```
 

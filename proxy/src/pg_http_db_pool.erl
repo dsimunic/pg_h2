@@ -1,6 +1,6 @@
 %% shamelessly stolen from James Fish's pool found in
 %% db_connectin https://github.com/elixir-ecto/db_connection/pull/108
--module(pg_http_pool).
+-module(pg_http_db_pool).
 
 -export([start_link/2,
          checkout/2,
@@ -14,7 +14,7 @@
          handle_call/3,
          handle_info/2]).
 
--include("pg_http_internal.hrl").
+-include("pg_http_pg_protocol.hrl").
 
 -define(TIMEOUT, 5000).
 -define(QUEUE, true).
@@ -86,7 +86,7 @@ format_error(client_timeout) ->
 init({Pool, PoolConfig}) ->
     process_flag(trap_exit, true),
     QueueTid = ets:new(?MODULE, [protected, ordered_set]),
-    {ok, _} = pg_http_pool_sup:start_link(QueueTid, Pool, PoolConfig),
+    {ok, _} = pg_http_db_pool_sup:start_link(QueueTid, Pool, PoolConfig),
 
     Target = maps:get(queue_target, PoolConfig, ?QUEUE_TARGET),
     Interval = maps:get(queue_interval, PoolConfig, ?QUEUE_INTERVAL),
@@ -197,7 +197,7 @@ drop_slow(Time, Timeout, Queue) ->
 
 ping(Holder, Queue, Codel) ->
     [{_, Conn, _, _, State}] = ets:lookup(Holder, ?HOLDER_KEY),
-    pg_http_connection:ping(Conn, Holder, State),
+    pg_http_db_connection:ping(Conn, Holder, State),
     ets:delete(Holder),
     {noreply, {ready, Queue, Codel}}.
 
@@ -374,4 +374,4 @@ delete_holder(Holder, Err) ->
     [{_, Conn, Deadline, State}] = ets:lookup(Holder, ?HOLDER_KEY),
     ets:delete(Holder),
     cancel_deadline(Deadline),
-    pg_http_connection:disconnect(Conn, Holder, Err, State).
+    pg_http_db_connection:disconnect(Conn, Holder, Err, State).

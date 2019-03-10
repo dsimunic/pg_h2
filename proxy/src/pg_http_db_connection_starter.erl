@@ -1,4 +1,4 @@
--module(pg_http_connection_starter).
+-module(pg_http_db_connection_starter).
 
 -export([start_link/2]).
 
@@ -21,9 +21,9 @@ callback_mode() ->
     state_functions.
 
 connect(internal, start_connections, #data{sup=Sup, size=Size}) ->
-    ConnSup = pg_http_pool_sup:whereis_child(Sup, connection_sup),
-    [{ok, _} = pg_http_connection_sup:start_child(ConnSup) || _ <- lists:seq(1, Size)],
+    ConnSup = pg_http_db_pool_sup:whereis_child(Sup, connection_sup),
+    [{ok, _} = pg_http_db_connection_sup:start_child(ConnSup) || _ <- lists:seq(1, Size)],
 
-    TypeServer = pg_http_pool_sup:whereis_child(Sup, type_server),
-    pg_http_type_server:reload(TypeServer),
+    TypeServer = pg_http_db_pool_sup:whereis_child(Sup, type_server),
+    pg_http_db_type_server:reload(TypeServer),
     keep_state_and_data.

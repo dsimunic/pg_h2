@@ -20,9 +20,11 @@
          checkout/1,
          checkout/2,
          checkin/2,
-         break/1]).
+         break/1,
+         maybe_start_span/3,
+         maybe_finish_span/3]).
 
--include("pg_http_internal.hrl").
+-include("pg_http_pg_protocol.hrl").
 
 -export_type([result/0,
               error/0,
@@ -98,7 +100,7 @@ query(Query, Params, Options) ->
                                                             <<"pgo:query/3">>,
                                                             #{attributes => #{<<"query">> => Query}}),
                     try
-                        pg_http_handler:extended_query(Conn, Query, Params,
+                        pg_http_db_handler:extended_query(Conn, Query, Params,
                                                    DecodeOptions ++ DefaultDecodeOpts,
                                                    #{queue_time => undefined})
                     after
@@ -112,7 +114,7 @@ query(Query, Params, Options) ->
             %% verify we aren't trying to run a query against another pool from a transaction
             case maps:get(pool, Options, Pool) of
                 P when P =:= Pool ->
-                    pg_http_handler:extended_query(Conn, Query, Params,
+                    pg_http_db_handler:extended_query(Conn, Query, Params,
                                                DecodeOptions ++ DefaultDecodeOpts,
                                                #{queue_time => undefined});
                 P ->
@@ -143,16 +145,16 @@ transaction(Pool, Fun, Options) ->
                                                             <<"pgo:transaction/2">>,
                                                             #{}),
                     try
-                        #{command := 'begin'} = pg_http_handler:extended_query(Conn, "BEGIN", [],
+                        #{command := 'begin'} = pg_http_db_handler:extended_query(Conn, "BEGIN", [],
                                                                            #{queue_time => undefined}),
                         put(pg_http_transaction_connection, Conn),
                         Result = Fun(),
-                        #{command := commit} = pg_http_handler:extended_query(Conn, "COMMIT", [],
+                        #{command := commit} = pg_http_db_handler:extended_query(Conn, "COMMIT", [],
                                                                           #{queue_time => undefined}),
                         Result
                     catch
                         ?WITH_STACKTRACE(T, R, S)
-                        pg_http_handler:extended_query(Conn, "ROLLBACK", [], #{queue_time => undefined}),
+                        pg_http_db_handler:extended_query(Conn, "ROLLBACK", [], #{queue_time => undefined}),
                         erlang:raise(T, R, S)
                     after
                         maybe_finish_span(DoTrace, SpanCtx, ParentCtx),
@@ -198,20 +200,20 @@ with_conn(Conn, Fun) ->
     end.
 
 %% @doc Returns a connection from the pool.
--spec checkout(atom()) -> {ok, pg_http_pool:pool_ref(), pg_http_pool:conn()} | {error, any()}.
+-spec checkout(atom()) -> {ok, pg_http_db_pool:pool_ref(), pg_http_db_pool:conn()} | {error, any()}.
 checkout(Pool) ->
-    pg_http_pool:checkout(Pool, []).
+    pg_http_db_pool:checkout(Pool, []).
 
--spec checkout(atom(), [pool_option()]) -> {ok, pg_http_pool:pool_ref(), pg_http_pool:conn()} | {error, any()}.
+-spec checkout(atom(), [pool_option()]) -> {ok, pg_http_db_pool:pool_ref(), pg_http_db_pool:conn()} | {error, any()}.
 checkout(Pool, Options) ->
-    pg_http_pool:checkout(Pool, Options).
+    pg_http_db_pool:checkout(Pool, Options).
 
 %% @doc Return a checked out connection to its pool
--spec checkin(pg_http_pool:pool_ref(), pg_http_pool:conn()) -> ok.
+-spec checkin(pg_http_db_pool:pool_ref(), pg_http_db_pool:conn()) -> ok.
 checkin(Ref, Conn) ->
-    pg_http_pool:checkin(Ref, Conn, []).
+    pg_http_db_pool:checkin(Ref, Conn, []).
 
 %% @doc Disconnects the socket held by this reference.
--spec break(pg_http_pool:conn()) -> ok.
+-spec break(pg_http_db_pool:conn()) -> ok.
 break(Conn) ->
-    pg_http_connection:break(Conn).
+    pg_http_db_connection:break(Conn).

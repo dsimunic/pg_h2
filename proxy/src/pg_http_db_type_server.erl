@@ -1,4 +1,4 @@
--module(pg_http_type_server).
+-module(pg_http_db_type_server).
 
 -export([start_link/2,
          reload/1,
@@ -58,7 +58,7 @@ terminate(_, _, #data{pool=Pool}) ->
     ets:delete(Pool).
 
 load(Pool, LastReload, RequestTime, PoolConfig) when LastReload < RequestTime ->
-    try pg_http_handler:open(Pool, PoolConfig) of
+    try pg_http_db_handler:open(Pool, PoolConfig) of
         {ok, Conn} ->
             load_and_update_types(Conn, Pool);
         {error, _} ->
@@ -72,12 +72,12 @@ load(_, _, _, _) ->
 
 load_and_update_types(Conn, Pool) ->
     try
-        #{rows := Oids} = pg_http_handler:extended_query(Conn, "SELECT oid, typname FROM pg_type", [],
+        #{rows := Oids} = pg_http_db_handler:extended_query(Conn, "SELECT oid, typname FROM pg_type", [],
                                                      [no_reload_types], #{queue_time => undefined}),
         [ets:insert(Pool, {Oid, binary_to_atom(Typename, utf8)}) || {Oid, Typename} <- Oids]
     catch
         _:_ ->
             failed
     after
-        pg_http_handler:close(Conn)
+        pg_http_db_handler:close(Conn)
     end.

@@ -1,7 +1,7 @@
 %% Mostly from the pgsql_protocol module in https://github.com/semiocast/pgsql
--module(pg_http_protocol).
+-module(pg_http_pg_protocol).
 
--include("pg_http_internal.hrl").
+-include("pg_http_pg_protocol.hrl").
 
 -export([encode_startup_message/1,
          encode_ssl_request_message/0,

@@ -1,7 +1,7 @@
 %% Mostly from the pgsql_connection module in https://github.com/semiocast/pgsql
--module(pg_http_handler).
+-module(pg_http_db_handler).
 
--include("pg_http_internal.hrl").
+-include("pg_http_pg_protocol.hrl").
 
 -export([open/2,
          extended_query/3,
@@ -84,7 +84,7 @@ close(#conn{socket=Socket}) ->
 %%--------------------------------------------------------------------
 %% @doc Actually open (or re-open) the connection.
 %%
--spec open(atom(), pgo:pool_config()) -> {ok, pg_http_pool:conn()} | {error, any()}.
+-spec open(atom(), pgo:pool_config()) -> {ok, pg_http_db_pool:conn()} | {error, any()}.
 open(Pool, PoolConfig) ->
     Host = maps:get(host, PoolConfig, ?DEFAULT_HOST),
     Port = maps:get(port, PoolConfig, ?DEFAULT_PORT),
@@ -122,7 +122,7 @@ setup(Socket, Options) ->
     end.
 
 setup_ssl(Socket, Options) ->
-    SSLRequestMessage = pg_http_protocol:encode_ssl_request_message(),
+    SSLRequestMessage = pg_http_pg_protocol:encode_ssl_request_message(),
     case gen_tcp:send(Socket, SSLRequestMessage) of
         ok ->
             case gen_tcp:recv(Socket, 1) of
@@ -151,7 +151,7 @@ setup_startup(Socket, Options) ->
     ConnectionParams1 = lists:keymerge(1, ConnectionParams,
                                        [{<<"application_name">>, atom_to_binary(node(), utf8)}]),
     StartupMessage =
-        pg_http_protocol:encode_startup_message([{<<"user">>, User},
+        pg_http_pg_protocol:encode_startup_message([{<<"user">>, User},
                                              {<<"database">>, Database}
                                              | ConnectionParams1]),
     case gen_tcp:send(Socket, StartupMessage) of
@@ -198,7 +198,7 @@ setup_authenticate_md5_password(Socket, Salt, Options) ->
     setup_authenticate_password(Socket, MD5ChallengeResponse, Options).
 
 setup_authenticate_password(Socket, Password, Options) ->
-    Message = pg_http_protocol:encode_password_message(Password),
+    Message = pg_http_pg_protocol:encode_password_message(Password),
     case gen_tcp:send(Socket, Message) of
         ok ->
             case receive_message(Socket, []) of
@@ -240,13 +240,12 @@ setup_finish(Socket, Options) ->
 %% set_succeeded_or_within_failed_transaction({error, {error, _} = Error}) ->
 %%     error:is_in_failed_sql_transaction(Error).
 
-extended_query(Conn=#conn{socket=Socket,
-                          pool=Pool}, Query, Parameters, DecodeOptions, PerRowFun, Acc0) ->
+extended_query(Conn=#conn{socket=Socket, pool=Pool}, Query, Parameters, DecodeOptions, PerRowFun, Acc0) ->
     put(query, Query),
     IntegerDateTimes = true,
-    ParseMessage = pg_http_protocol:encode_parse_message("", Query, []),
+    ParseMessage = pg_http_pg_protocol:encode_parse_message("", Query, []),
     % We ask for a description of parameters only if required.
-    PacketT = case catch(pg_http_query_cache:lookup(Pool, Query)) of
+    PacketT = case catch(pg_http_db_query_cache:lookup(Pool, Query)) of
        DataTypes when is_list(DataTypes) ->
             case encode_bind_describe_execute(Parameters, DataTypes, Pool, IntegerDateTimes) of
                 {ok, BindExecute} ->
@@ -255,8 +254,8 @@ extended_query(Conn=#conn{socket=Socket,
                     Error
             end;
         not_found ->
-            DescribeStatementMessage = pg_http_protocol:encode_describe_message(statement, ""),
-            FlushMessage = pg_http_protocol:encode_flush_message(),
+            DescribeStatementMessage = pg_http_pg_protocol:encode_describe_message(statement, ""),
+            FlushMessage = pg_http_pg_protocol:encode_flush_message(),
             LoopState0 = {parse_complete_with_params, Parameters},
             {ok, [ParseMessage, DescribeStatementMessage, FlushMessage], LoopState0}
 
@@ -280,11 +279,11 @@ extended_query(Conn=#conn{socket=Socket,
 -spec encode_bind_describe_execute([any()], [oid()], atom(), boolean())
                                   -> {ok, iodata()} | {error, any()}.
 encode_bind_describe_execute(Parameters, ParameterDataTypes, Pool, IntegerDateTimes) ->
-    DescribeMessage = pg_http_protocol:encode_describe_message(portal, ""),
-    ExecuteMessage = pg_http_protocol:encode_execute_message("", 0),
-    SyncOrFlushMessage = pg_http_protocol:encode_sync_message(),
+    DescribeMessage = pg_http_pg_protocol:encode_describe_message(portal, ""),
+    ExecuteMessage = pg_http_pg_protocol:encode_execute_message("", 0),
+    SyncOrFlushMessage = pg_http_pg_protocol:encode_sync_message(),
     try
-        BindMessage = pg_http_protocol:encode_bind_message("", "", Parameters, ParameterDataTypes,
+        BindMessage = pg_http_pg_protocol:encode_bind_message("", "", Parameters, ParameterDataTypes,
                                                        Pool, IntegerDateTimes),
         SinglePacket = [BindMessage, DescribeMessage, ExecuteMessage, SyncOrFlushMessage],
         {ok, SinglePacket}
@@ -295,7 +294,7 @@ encode_bind_describe_execute(Parameters, ParameterDataTypes, Pool, IntegerDateTi
     end.
 
 %% requires_statement_description(_Parameters) ->
-%%     true. %pg_http_protocol:bind_requires_statement_description(Parameters).
+%%     true. %pg_http_pg_protocol:bind_requires_statement_description(Parameters).
 
 -spec receive_loop(extended_query_loop_state(), pgo:decode_fun(), list(), list(), pgo:conn())
                   -> pgo:result().
@@ -320,7 +319,7 @@ receive_loop0(#parse_complete{}, {parse_complete_with_params, Parameters}, Decod
 receive_loop0(#parameter_description{data_types=ParameterDataTypes},
               {parameter_description_with_params, Parameters}, DecodeFun,
               Acc0, DecodeOptions, Conn=#conn{socket=Socket, pool=Pool}) ->
-    pg_http_query_cache:insert(Pool, get(query), ParameterDataTypes),
+    pg_http_db_query_cache:insert(Pool, get(query), ParameterDataTypes),
     oob_update_oid_map_if_required(Conn, ParameterDataTypes, DecodeOptions),
     PacketT = encode_bind_describe_execute(Parameters, ParameterDataTypes, Pool, true),
     case PacketT of
@@ -332,7 +331,7 @@ receive_loop0(#parameter_description{data_types=ParameterDataTypes},
                     SendError
             end;
         {error, _} = Error ->
-            case gen_tcp:send(Socket, pg_http_protocol:encode_sync_message()) of
+            case gen_tcp:send(Socket, pg_http_pg_protocol:encode_sync_message()) of
                 ok -> flush_until_ready_for_query(Error, Conn);
                 {error, _} = SendSyncPacketError -> SendSyncPacketError
             end
@@ -352,10 +351,10 @@ receive_loop0(#row_description{fields = Fields}, row_description, DecodeFun, Acc
     receive_loop({rows, Fields}, DecodeFun, Acc0, DecodeOptions, Conn);
 receive_loop0(#data_row{values = Values}, {rows, Fields} = LoopState, undefined=DecodeFun,
               Acc0, DecodeOptions, Conn=#conn{pool=Pool}) ->
-    DecodedRow = pg_http_protocol:decode_row(Fields, Values, Pool, DecodeOptions),
+    DecodedRow = pg_http_pg_protocol:decode_row(Fields, Values, Pool, DecodeOptions),
     receive_loop(LoopState, DecodeFun, [DecodedRow | Acc0], DecodeOptions, Conn);
 receive_loop0(#data_row{values = Values}, {rows, Fields} = LoopState, DecodeFun, Acc0, DecodeOptions, Conn=#conn{pool=Pool}) ->
-    DecodedRow = pg_http_protocol:decode_row(Fields, Values, Pool, DecodeOptions),
+    DecodedRow = pg_http_pg_protocol:decode_row(Fields, Values, Pool, DecodeOptions),
     receive_loop(LoopState, DecodeFun, [DecodeFun(DecodedRow, Fields) | Acc0], DecodeOptions, Conn);
 receive_loop0(#command_complete{command_tag = Tag}, _LoopState, DecodeFun, Acc0, DecodeOptions, Conn) ->
     {Command, NumRows} = decode_tag(Tag),
@@ -363,8 +362,8 @@ receive_loop0(#command_complete{command_tag = Tag}, _LoopState, DecodeFun, Acc0,
                             num_rows => NumRows,
                             rows => lists:reverse(Acc0)}}, DecodeFun, Acc0, DecodeOptions, Conn);
 %% receive_loop0(#portal_suspended{}, LoopState, DecodeFun, Acc0, DecodeOptions, Conn={_,S}) ->
-%%     ExecuteMessage = pg_http_protocol:encode_execute_message("", 0),
-%%     FlushMessage = pg_http_protocol:encode_flush_message(),
+%%     ExecuteMessage = pg_http_pg_protocol:encode_execute_message("", 0),
+%%     FlushMessage = pg_http_pg_protocol:encode_flush_message(),
 %%     SinglePacket = [ExecuteMessage, FlushMessage],
 %%     case gen_tcp:send(S, SinglePacket) of
 %%         ok -> receive_loop(LoopState, DecodeFun, Acc0, DecodeOptions, Conn);
@@ -385,7 +384,7 @@ receive_loop0(#error_response{fields = Fields}, LoopState, _Fun, _Acc0, _DecodeO
                end,
     case NeedSync of
         true ->
-            case gen_tcp:send(Socket, pg_http_protocol:encode_sync_message()) of
+            case gen_tcp:send(Socket, pg_http_pg_protocol:encode_sync_message()) of
                 ok -> flush_until_ready_for_query(Error, Conn);
                 {error, _} = SendSyncPacketError -> SendSyncPacketError
             end;
@@ -396,7 +395,7 @@ receive_loop0(#ready_for_query{} = Message, _LoopState, _Fun, _Acc0, _DecodeOpti
     Result = {error, {unexpected_message, Message}},
     Result;
 receive_loop0(Message, _LoopState, _Fun, _Acc0, _DecodeOptions, Conn=#conn{socket=Socket}) ->
-    gen_tcp:send(Socket, pg_http_protocol:encode_sync_message()),
+    gen_tcp:send(Socket, pg_http_pg_protocol:encode_sync_message()),
     Error = {error, {unexpected_message, Message}},
     flush_until_ready_for_query(Error, Conn).
 
@@ -422,11 +421,11 @@ receive_message(Socket, DecodeOpts) ->
                       Payload = Size - 4,
                       case Payload of
                           0 ->
-                              pg_http_protocol:decode_message(Code, <<>>, DecodeOpts);
+                              pg_http_pg_protocol:decode_message(Code, <<>>, DecodeOpts);
                           _ ->
                               case gen_tcp:recv(Socket, Payload) of
                                   {ok, Rest} ->
-                                      pg_http_protocol:decode_message(Code, Rest, DecodeOpts);
+                                      pg_http_pg_protocol:decode_message(Code, Rest, DecodeOpts);
                                   {error, _} = ErrorRecvPacket ->
                                       ErrorRecvPacket
                               end
@@ -508,7 +507,7 @@ oob_update_oid_map_if_required(Conn=#conn{pool=Pool}, OIDs, DecodeOptions) ->
                                   not ets:member(Pool, OID)
                           end, OIDs) of
         true ->
-            pg_http_connection:reload_types(Conn);
+            pg_http_db_connection:reload_types(Conn);
         false ->
             ok
     end.

@@ -1,4 +1,4 @@
--module(pg_http_query_cache).
+-module(pg_http_db_query_cache).
 
 -export([start_link/0,
          lookup/2,

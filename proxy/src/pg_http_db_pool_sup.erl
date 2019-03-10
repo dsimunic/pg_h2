@@ -1,4 +1,4 @@
--module(pg_http_pool_sup).
+-module(pg_http_db_pool_sup).
 
 -behaviour(supervisor).
 
@@ -20,15 +20,15 @@ whereis_child(Sup, Id) ->
 init([QueueTid, PoolPid, PoolName, PoolConfig]) ->
     Size = maps:get(pool_size, PoolConfig, 1),
     Children = [#{id => connection_sup,
-                  start => {pg_http_connection_sup, start_link, [QueueTid, PoolPid, PoolName, PoolConfig]},
+                  start => {pg_http_db_connection_sup, start_link, [QueueTid, PoolPid, PoolName, PoolConfig]},
                   type => supervisor,
                   shutdown => 5000},
                 #{id => connection_starter,
-                  start => {pg_http_connection_starter, start_link, [PoolPid, Size]},
+                  start => {pg_http_db_connection_starter, start_link, [PoolPid, Size]},
                   type => worker,
                   shutdown => 5000},
                 #{id => type_server,
-                  start => {pg_http_type_server, start_link, [PoolName, PoolConfig]},
+                  start => {pg_http_db_type_server, start_link, [PoolName, PoolConfig]},
                   type => worker,
                   shutdown => 5000}],
     {ok, {{rest_for_one, 5, 10}, Children}}.

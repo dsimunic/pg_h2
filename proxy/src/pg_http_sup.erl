@@ -20,7 +20,7 @@ init([]) ->
     SupFlags = #{strategy => simple_one_for_one,
                  intensity => 5,
                  period => 10},
-    ChildSpec = #{id => pg_http_pool,
-                  start => {pg_http_pool, start_link, []},
+    ChildSpec = #{id => pg_http_db_pool,
+                  start => {pg_http_db_pool, start_link, []},
                   shutdown => 1000},
     {ok, {SupFlags, [ChildSpec]}}.
