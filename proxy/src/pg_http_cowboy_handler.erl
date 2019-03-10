@@ -14,6 +14,7 @@ init(Req=#{method := <<"QUERY">>} , State) ->
     Req1 = pg_http_http_replies:set_query_response_headers(Req),
     DbResponse = query(Query, [], Req1, #{}),
 
+
     {ok, DbResponse, State};
 
 init(Req=#{method := <<"OPTIONS">>}, State) -> { ok, pg_http_http_replies:no_content(Req), State};
@@ -103,7 +104,6 @@ extended_query_2(Conn=#conn{socket=Socket, pool=Pool}, Query, Parameters, HttpRe
             {ok, [ParseMessage, DescribeStatementMessage, FlushMessage], LoopState0}
 
     end,
-    flush_until_ready_for_query(ok, Conn),
     case PacketT of
         {ok, SinglePacket, LoopState} ->
             case gen_tcp:send(Socket, SinglePacket) of
@@ -195,16 +195,16 @@ receive_loop0(#row_description{payload = Payload}, row_description, HttpReq, Con
     HttpReq0 = cowboy_req:stream_reply(200, #{
         <<"content-type">> => <<"text/plain">>
     }, HttpReq),
-    HttpReq1 = cowboy_req:stream_body(list_to_binary(Payload), nofin, HttpReq0),
-    receive_loop({rows}, HttpReq1, Conn);
+    ok = cowboy_req:stream_body(list_to_binary(Payload), nofin, HttpReq0),
+    receive_loop(rows, HttpReq0, Conn);
 
-receive_loop0(#data_row{payload = Payload}, {rows} = LoopState, HttpReq, Conn) ->
-    HttpReq1 = cowboy_req:stream_body(list_to_binary(Payload), nofin, HttpReq),
-    receive_loop(LoopState, HttpReq1, Conn);
+receive_loop0(#data_row{payload = Payload}, rows = LoopState, HttpReq, Conn) ->
+    ok = cowboy_req:stream_body(list_to_binary(Payload), nofin, HttpReq),
+    receive_loop(LoopState, HttpReq, Conn);
 
 receive_loop0(#command_complete{command_tag = _Tag}, _LoopState, HttpReq, Conn) ->
-    HttpReq1 = cowboy_req:stream_body(<<>>, fin, HttpReq),
-    receive_loop(result, HttpReq1, Conn);
+    ok = cowboy_req:stream_body(<<>>, fin, HttpReq),
+    receive_loop(result, HttpReq, Conn);
 %% receive_loop0(#portal_suspended{}, LoopState, HttpReq, Conn={_,S}) ->
 %%     ExecuteMessage = pg_http_pg_protocol:encode_execute_message("", 0),
 %%     FlushMessage = pg_http_pg_protocol:encode_flush_message(),
@@ -236,9 +236,6 @@ receive_loop0(#error_response{fields = Fields}, LoopState, _HttpReq, Conn=#conn{
         false ->
             flush_until_ready_for_query(Error, Conn)
     end;
-receive_loop0(#ready_for_query{} = Message, _LoopState, _HttpReq, _Conn) ->
-    Result = {error, {unexpected_message, Message}},
-    Result;
 receive_loop0(Message, _LoopState, _HttpReq, Conn=#conn{socket=Socket}) ->
     gen_tcp:send(Socket, pg_http_pg_protocol:encode_sync_message()),
     Error = {error, {unexpected_message, Message}},

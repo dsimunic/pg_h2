@@ -10,10 +10,10 @@
 -export([start/2, stop/1]).
 
 start(_StartType, _StartArgs) ->
-    pg_http_db_query_cache:start_link(),
-    Pools = application:get_env(pg_http, pools, []),
-
     {ok, SupPid} = pg_http_sup:start_link(),
+    {ok, _} = pg_http_db_query_cache:start_link(),
+
+    Pools = application:get_env(pg_http, pools, []),
     [{ok, _} = pg_http_sup:start_child(Name, PoolConfig) || {Name, PoolConfig} <- Pools],
 
     Dispatch = cowboy_router:compile([ {'_', [{"/", pg_http_cowboy_handler, []}]} ]),
