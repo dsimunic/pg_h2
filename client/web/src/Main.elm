@@ -1,21 +1,17 @@
 module Main exposing (Model, Msg(..), init, main, update, view)
 
--- import Layouts.Columns as Layout
-
 import Browser
 import Bytes exposing (Bytes)
-import Hex
-import Html exposing (Html, button, div, h1, img, input, table, td, text, textarea, th, tr)
+import Html exposing (Html, button, div, h1, img, input, table, tbody, td, text, textarea, th, tr)
 import Html.Attributes exposing (style, type_, value)
 import Html.Events exposing (onClick, onInput)
 import Http exposing (header)
 import Layouts.Rows as Layout
-import Postgres.Decode exposing (Resultset, decodeQueryResponse, resultsetDecoder)
+import Postgres.Decode exposing (Resultset, decodeResultset, expectPostgresResponse)
 
 
 type Page
     = InputPage
-    | DisplayPage
 
 
 type Msg
@@ -92,7 +88,7 @@ issueQuery q =
         , headers = []
         , url = "https://localhost:8443"
         , body = Http.stringBody "postgres/simple-query" q
-        , expect = Http.expectBytes GotQueryResult resultsetDecoder
+        , expect = expectPostgresResponse GotQueryResult decodeResultset
         , timeout = Nothing
         , tracker = Nothing
         }
@@ -107,9 +103,6 @@ view model =
     let
         content =
             case model.currPage of
-                DisplayPage ->
-                    displayPage model
-
                 InputPage ->
                     inputPage model
     in
@@ -144,22 +137,19 @@ inputPage ({ layoutModel } as model) =
         )
 
 
-displayPage : Model -> Html Msg
-displayPage ({ layoutModel } as model) =
-    subView
-        layoutModel
-        ( [ div [] [ Html.text model.queryText ] ]
-        , [ div [] [ rowsetInfo model.bytes ] ]
-        )
-
-
 rowsetInfo : Maybe Resultset -> Html Msg
 rowsetInfo r =
     case r of
-        Just { tag, len, fields, rows } ->
+        Just { fields, rows } ->
             table []
                 [ tr [] (List.map (.name >> (\h -> th [] [ text h ])) fields)
-                , tr [] (List.map (\v -> td [] [ text v ]) rows.values)
+                , tbody []
+                    (List.map
+                        (\row ->
+                            tr [] (List.map (\v -> td [] [ text v ]) row.values)
+                        )
+                        rows
+                    )
                 ]
 
         Nothing ->
